@@ -1,5 +1,6 @@
 import json
 import string
+import os
 
 def copy_input_json(json_path: str,  out_path: str, new_name: str,):
     with open(json_path, 'r') as f:
@@ -203,7 +204,6 @@ def add_protein_template(json_path, chain_id, mmcif_path, query_range):
             if "templates" not in seq["protein"]:
                 seq["protein"]["templates"] = []
 
-
     # Generate indices
     query_indices, template_indices = generate_indices(query_range)
 
@@ -231,32 +231,138 @@ def add_protein_template(json_path, chain_id, mmcif_path, query_range):
 
     print(f"Protein chain {chain_id} not found in {json_path}")
 
+def fasta_to_json(fasta_path, output_json_path, model_seeds=[1, 2, 3, 4, 5], ids=["A", "B", "C", "D"],
+                  dialect="alphafold3", version=1):
+    with open(fasta_path, "r") as file:
+        lines = file.readlines()
+
+    if not lines or lines[0][0] != ">":
+        raise ValueError("Invalid FASTA format: missing header line.")
+
+    name = lines[0][1:].strip()
+    sequence = "".join(line.strip() for line in lines[1:] if line.strip())
+
+    if not sequence:
+        raise ValueError("Invalid FASTA file: sequence is missing.")
+
+    if sequence.count(">") > 0:
+        raise ValueError("Multiple sequences detected in FASTA file. Only one is allowed.")
+
+    json_data = {
+        "name": name,
+        "modelSeeds": model_seeds,
+        "sequences": [
+            {
+                "protein": {
+                    "sequence": sequence,
+                    "id": ids
+                }
+            }
+        ],
+        "dialect": dialect,
+        "version": version
+    }
+
+    with open(output_json_path, "w") as json_file:
+        json.dump(json_data, json_file, indent=4)
+
+    return json_data
+
+
 # Example usage
 if __name__ == "__main__":
-
-    pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
-
-    structure_name = "t2cac4try4"
-    json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/test/{structure_name}.json"
-
-    copy_input_json(pure_json, json_path, structure_name)
-
+    prot_data = {   "A0A2Z5U3Y6" : {"templates" : [["A0A2Z5U3Y6_fullnohead_ranked0", (1, 453)],
+                                                      ["A0A2Z5U3Y6_head", (69, 453)],
+                                                      ],
+                                       "glycan_sites" : [44, 72, 219, 382]
+                                       },
+                       "C3W6G3" :     {"templates" : [["C3W6G3_fullnohead_ranked2", (1, 469)],
+                                                      ["C3W6G3_head", (85, 469)],
+                                                      ],
+                                       "glycan_sites" : [50, 58, 63, 68, 88, 146, 235, 386]
+                                       },
+                       "P03468" :     {"templates" : [["P03468_fullnohead_ranked0", (1, 454)],
+                                                      ["P03468_head", (70, 454)],
+                                                      ],
+                                       "glycan_sites" : [44, 58, 73, 131, 220]
+                                       },
+                       "Q91MA2":      {"templates": [["Q91MA2_fullheadnohead_ranked0", (1, 469)],
+                                                    ["Q91MA2_head", (83, 469)],
+                                                    ],
+                                       "glycan_sites": [61, 70, 86, 146, 200, 234, 402] #69
+                                       },
+                       }
     na_chains = ["A", "B", "C", "D"]
-    templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/templates/try2/T2CAC4_nohead_chain_{id}.mmcif"
-                           for id in na_chains}
-    paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/templates/try2/t2cac4_data_paired_chain_A.a3m"
-    unpaired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/templates/try2/t2cac4_data_unpaired_chain_A.a3m"
-    query_range = (1, 63)
-    glycosylation_list = [42, 50, 58, 63, 68, 88, 235]
+
+    # CREATE RAW JSONS
+    # 1) copy fasta file with one prot
+    fasta_dir = "/g/kosinski/kgilep/flu_na_project/na_af3/na_fasta/"
+    raw_dir = "/g/kosinski/kgilep/flu_na_project/na_af3/af3/input_json/raw"
+
+    for fasta_path, raw_json in [(os.path.join(fasta_dir, f'{prot}.fasta'),
+                                  os.path.join(raw_dir, f'{prot}.json')) for prot in prot_data.keys()]:
+        fasta_to_json(fasta_path, raw_json)
+
+    # PREPARE TEMPLATES, GLYCAN, MSA
+    # 1) copy template from AF2 predictions
+    # 2) convert pdb to cif
+    # 3) split by chain
+    # 4) extract msa from the prerun features
     type_glycan = "NAG(NAG(BMA(MAN)(MAN)))"
+    template_dir = "/g/kosinski/kgilep/flu_na_project/na_af3/templates/try1"
+    json_dir = "/g/kosinski/kgilep/flu_na_project/na_af3/af3/input_json/try1"
+    msa_dir = "/g/kosinski/kgilep/flu_na_project/na_af3/msa"
 
-    split_by_chains(json_path)
-    change_input_json_version(json_path, 2)
+    for prot, data in prot_data.items():
+        raw_json, json_path = [os.path.join(dir_path, f"{prot}.json")
+                               for dir_path in (raw_dir, json_dir)]
+        copy_input_json(raw_json, json_path, prot)
+        split_by_chains(json_path)
+        change_input_json_version(json_path, version=2)
+        for chain_id in na_chains:
+            # TEMPLATES
+            for template, query_range in data['templates']:
+                templ_path = os.path.join(template_dir, f'{template}_chain_{chain_id}.cif')
+                add_protein_template(json_path, chain_id, templ_path, query_range)
+            # GLYCANS
+            for glycan_num in data['glycan_sites']:
+                add_glycan(json_path, chain_id, glycan_num, type_glycan)
+            # MSA
+            paired_msa_path, unpaired_msa_path = [os.path.join(msa_dir, f"{prot.lower()}_data_{aln_type}_chain_A.a3m")
+                                                  for aln_type in ("paired", "unpaired")]
+            add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
 
-    for chain_id in na_chains:
-        add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
-        for glycan_num in glycosylation_list:
-            add_glycan(json_path, chain_id, glycan_num, type_glycan)
-        # add_glycan(json_path, chain_id, 58, 'NAG' )
-        add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
+    # pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
+    #
+    # structure_name = "t2cac4_fullaf2tmpl_plushead"
+    # json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/fullaf2templ/{structure_name}.json"
+    #
+    # copy_input_json(pure_json, json_path, structure_name)
+    #
+    # na_chains = ["A", "B", "C", "D"]
+    # # templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/templates/try2/T2CAC4_nohead_chain_{id}.mmcif"
+    # #                        for id in na_chains}
+    # templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/fullaf2templ/templates/C3W6G3_fullnohead_ranked2_chain_{id}.mmcif"
+    #                        for id in na_chains}
+    # templates_path_dict_2 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/T2CAC4_head_chain_{id}.mmcif"
+    #                        for id in na_chains}
+    # paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_paired.a3m"
+    # unpaired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_unpaired.a3m"
+    # # query_range = (1, 63)
+    # query_range = (1, 468)
+    # query_range_2 = (92,468)
+    #
+    # glycosylation_list = [42, 50, 58, 63, 68, 88, 235]
+    # type_glycan = "NAG(NAG(BMA(MAN)(MAN)))"
+    #
+    # split_by_chains(json_path)
+    # change_input_json_version(json_path, 2)
+    #
+    # for chain_id in na_chains:
+    #     add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
+    #     add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
+    #     for glycan_num in glycosylation_list:
+    #         add_glycan(json_path, chain_id, glycan_num, type_glycan)
+    #     # add_glycan(json_path, chain_id, 58, 'NAG' )
+    #     add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
 
