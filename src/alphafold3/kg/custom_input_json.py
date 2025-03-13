@@ -95,6 +95,17 @@ def glycan_type_to_data(type_glycan):
                        [[3,'O3'],[4, 'C1']],
                        [[3,'O6'],[5, 'C1']],
                        ]
+    elif type_glycan == "NAG(FUC)(NAG(BMA(MAN)(MAN)))":
+        glycan_ccds = ['NAG', 'NAG', 'BMA', 'MAN', 'MAN', 'FUC']
+        res_atom_id = 'ND2'
+        glyc_connection_atom = [1, 'C1']
+        inter_bonds = [[[1,'O4'],[2, 'C1']],
+                       [[2,'O4'],[3, 'C1']],
+                       [[3,'O3'],[4, 'C1']],
+                       [[3,'O6'],[5, 'C1']],
+                       [[1, 'O6'], [6, 'C1']],
+                       ]
+
     else:
         raise ValueError(f"Glycan type {type_glycan} is not supported.")
     return glycan_ccds, res_atom_id, glyc_connection_atom, inter_bonds
@@ -342,7 +353,7 @@ if __name__ == "__main__":
     query_range_2 = (82,468)
 
     glycosylation_list = [42, 50, 58, 63, 68, 88, 235, 146] # excluded 386 (not visible on the density map, can't see density under the Ab as well)
-    type_glycan = "NAG(NAG(BMA(MAN)(MAN)))"
+    type_glycan = "NAG(FUC)(NAG(BMA(MAN)(MAN)))"
 
     split_by_chains(json_path)
     change_input_json_version(json_path, 2)
@@ -350,7 +361,6 @@ if __name__ == "__main__":
     for chain_id in na_chains:
         add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
         mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
-        # MANUALLY UNMASKED 71 RESIDUE
         add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
         for glycan_num in glycosylation_list:
             add_glycan(json_path, chain_id, glycan_num, type_glycan)
