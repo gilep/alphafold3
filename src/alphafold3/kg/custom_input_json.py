@@ -282,7 +282,7 @@ def mask_template_region(json_path, chain_id, region_to_mask, template_num=0):
     if not chain_found:
         raise ValueError(f"Protein chain {chain_id} not found in {json_path}")
 
-def fasta_to_json(fasta_path, output_json_path, model_seeds=[1, 2, 3, 4, 5], ids=["A", "B", "C", "D"],
+def fasta_to_json(fasta_path, output_json_path, model_seeds=(1, 2, 3, 4, 5), ids=("A", "B", "C", "D"),
                   dialect="alphafold3", version=1):
     with open(fasta_path, "r") as file:
         lines = file.readlines()
@@ -338,7 +338,7 @@ if __name__ == "__main__":
     paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_paired.a3m"
     unpaired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_unpaired.a3m"
     query_range = (1, 468)
-    range_to_mask_1 = (46,85)
+    region_to_mask_1 = (46,85)
     query_range_2 = (82,468)
 
     glycosylation_list = [42, 50, 58, 63, 68, 88, 235, 146] # excluded 386 (not visible on the density map, can't see density under the Ab as well)
@@ -349,8 +349,9 @@ if __name__ == "__main__":
 
     for chain_id in na_chains:
         add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
-        mask_template_region(json_path, chain_id, range_to_mask_1, template_num=0)
-        # add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
+        mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
+        # MANUALLY UNMASKED 71 RESIDUE
+        add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
         for glycan_num in glycosylation_list:
             add_glycan(json_path, chain_id, glycan_num, type_glycan)
         add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
