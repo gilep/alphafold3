@@ -348,7 +348,7 @@ if __name__ == "__main__":
 
     pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
 
-    structure_name = "t2cac4_optimized1"
+    structure_name = "t2cac4_optimized1.5"
     json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized1/{structure_name}.json"
 
     copy_input_json(pure_json, json_path, structure_name)
@@ -361,7 +361,7 @@ if __name__ == "__main__":
     paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_paired.a3m"
     unpaired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_unpaired.a3m"
     query_range = (1, 468)
-    region_to_mask_1 = (46,85)
+    region_to_mask_1 = (76,85)
     query_range_2 = (82,468)
 
     glycosylation_list = [42, 50, 58, 63, 68, 88, 235, 146] # excluded 386 (not visible on the density map, can't see density under the Ab as well)
