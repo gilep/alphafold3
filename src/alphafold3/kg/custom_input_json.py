@@ -86,7 +86,7 @@ def glycan_type_to_data(type_glycan):
         inter_bonds = [[[1,'O4'],[2, 'C1']],
                        [[2,'O4'],[3, 'C1']]
                        ]
-    elif type_glycan == "NAG(NAG(BMA(MAN)(MAN)))":
+    elif type_glycan == "NAG(NAG(BMA(MAN)(MAN)))" or type_glycan == "M3":
         glycan_ccds = ['NAG', 'NAG', 'BMA', 'MAN', 'MAN']
         res_atom_id = 'ND2'
         glyc_connection_atom = [1, 'C1']
@@ -95,6 +95,32 @@ def glycan_type_to_data(type_glycan):
                        [[3,'O3'],[4, 'C1']],
                        [[3,'O6'],[5, 'C1']],
                        ]
+    elif type_glycan == "NAG(NAG(BMA(MAN)(MAN(MAN)(MAN))))" or type_glycan == "M5":
+        glycan_ccds = ['NAG', 'NAG', 'BMA', 'MAN', 'MAN', 'MAN', 'MAN']
+        res_atom_id = 'ND2'
+        glyc_connection_atom = [1, 'C1']
+        inter_bonds = [[[1,'O4'],[2, 'C1']],
+                       [[2,'O4'],[3, 'C1']],
+                       [[3,'O3'],[4, 'C1']],
+                       [[3,'O6'],[5, 'C1']],
+                       [[5, 'O3'], [6, 'C1']],
+                       [[5, 'O6'], [7, 'C1']],
+                       ]
+    elif type_glycan == "NAG(NAG(BMA(MAN(MAN(MAN)))(MAN(MAN)(MAN(MAN)))))" or type_glycan == "M8":
+        glycan_ccds = ['NAG', 'NAG', 'BMA', 'MAN', 'MAN', 'MAN', 'MAN', 'MAN', 'MAN', 'MAN']
+        res_atom_id = 'ND2'
+        glyc_connection_atom = [1, 'C1']
+        inter_bonds = [[[1,'O4'],[2, 'C1']],
+                       [[2,'O4'],[3, 'C1']],
+                       [[3,'O3'],[4, 'C1']],
+                       [[3,'O6'],[5, 'C1']],
+                       [[4, 'O2'], [6, 'C1']],
+                       [[6, 'O2'], [7, 'C1']],
+                       [[5, 'O3'], [8, 'C1']],
+                       [[5, 'O6'], [9, 'C1']],
+                       [[9, 'O2'], [10, 'C1']],
+                       ]
+
     elif type_glycan == "NAG(FUC)(NAG(BMA(MAN)(MAN)))":
         glycan_ccds = ['NAG', 'NAG', 'BMA', 'MAN', 'MAN', 'FUC']
         res_atom_id = 'ND2'
@@ -105,7 +131,7 @@ def glycan_type_to_data(type_glycan):
                        [[3,'O6'],[5, 'C1']],
                        [[1, 'O6'], [6, 'C1']],
                        ]
-    elif type_glycan == "NAG(FUC)(NAG(BMA(MAN(NAG))(MAN(NAG))))":
+    elif type_glycan == "NAG(FUC)(NAG(BMA(MAN(NAG))(MAN(NAG))))" or type_glycan == "G0F":
         glycan_ccds = ['NAG', 'NAG', 'BMA', 'MAN', 'MAN', 'FUC', 'NAG', 'NAG']
         res_atom_id = 'ND2'
         glyc_connection_atom = [1, 'C1']
@@ -348,8 +374,8 @@ if __name__ == "__main__":
 
     pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
 
-    structure_name = "t2cac4_optimized1.5"
-    json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized1/{structure_name}.json"
+    structure_name = "t2cac4_optimized2.0"
+    json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized2/{structure_name}.json"
 
     copy_input_json(pure_json, json_path, structure_name)
 
@@ -358,15 +384,24 @@ if __name__ == "__main__":
                            for id in na_chains}
     templates_path_dict_2 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_head_chain_{id}.cif"
                            for id in na_chains}
+    templates_path_dict_3 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized2/T2CAC4_ISOLDE_chain_A.cif"
+                           for id in na_chains}
     paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_paired.a3m"
     unpaired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_unpaired.a3m"
     query_range = (1, 468)
     region_to_mask_1 = (76,85)
     query_range_2 = (82,468)
+    query_range_3 = (77, 468)
 
-    glycosylation_list = [42, 50, 58, 63, 68, 88, 235, 146] # excluded 386 (not visible on the density map, can't see density under the Ab as well)
-    type_glycan_1 = "NAG(FUC)(NAG(BMA(MAN(NAG))(MAN(NAG))))"
-    type_glycan_2 = "NAG(NAG(BMA(MAN)(MAN)))"
+    # excluded 386 (not visible on the density map, can't see density under the Ab as well)
+    glycosylation_dict = {42: 'G0F',
+                          50: 'G0F',
+                          58: 'G0F',
+                          63: 'G0F',
+                          68: 'G0F',
+                          88: 'M5',
+                          235: 'M3',
+                          146: 'M3'}
 
     split_by_chains(json_path)
     change_input_json_version(json_path, 2)
@@ -375,9 +410,8 @@ if __name__ == "__main__":
         add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
         mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
         add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
-        for glycan_num in glycosylation_list[:6]:
-            add_glycan(json_path, chain_id, glycan_num, type_glycan_1)
-        for glycan_num in glycosylation_list[6:]:
-            add_glycan(json_path, chain_id, glycan_num, type_glycan_2)
+        add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
+        for glycan_num, glycan_type in glycosylation_dict.items():
+            add_glycan(json_path, chain_id, glycan_num, glycan_type)
         add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
 
