@@ -374,7 +374,7 @@ if __name__ == "__main__":
 
     pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
 
-    structure_name = "t2cac4_optimized2.2"
+    structure_name = "t2cac4_optimized2.3"
     json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized2/{structure_name}.json"
 
     copy_input_json(pure_json, json_path, structure_name)
@@ -391,7 +391,8 @@ if __name__ == "__main__":
     query_range = (1, 468)
     region_to_mask_1 = (76,85)
     query_range_2 = (82,468)
-    query_range_3 = (77, 468)
+    query_range_3 = (1, 468)
+    region_to_mask_3 = (0, 76)
 
     # excluded 386 (not visible on the density map, can't see density under the Ab as well)
     glycosylation_dict = {42: 'G0F',
@@ -410,7 +411,8 @@ if __name__ == "__main__":
         # add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
         # mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
         # add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
-        # add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
+        add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
+        mask_template_region(json_path, chain_id, region_to_mask_3, template_num=0)
         for glycan_num, glycan_type in glycosylation_dict.items():
             add_glycan(json_path, chain_id, glycan_num, glycan_type)
         add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
