@@ -39,6 +39,117 @@ def change_input_json_version(json_path: str, version: int):
     with open(json_path, 'w') as f:
         json.dump(af3_data, f, indent=4)
 
+def clear_templates_for_chain(chain_id, input_json_path, output_json_path):
+    """
+    Sets the 'templates' field to null for a specific protein chain in an AlphaFold3 input JSON.
+
+    Parameters:
+    - chain_id: the 'id' of the protein to update (e.g., 'A')
+    - input_json_path: path to the input JSON file.
+    - output_json_path: path to save the modified JSON.
+    """
+    with open(input_json_path, 'r') as f:
+        data = json.load(f)
+
+    for entry in data.get('sequences', []):
+        protein = entry.get('protein')
+        if protein and protein.get('id') == chain_id:
+            protein['templates'] = []
+
+    with open(output_json_path, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def change_seeds(json_path: str, num_seeds: int):
+    with open(json_path, 'r') as f:
+        af3_data = json.load(f)
+    af3_data['modelSeeds'] = list(range(1, num_seeds+1))
+    with open(json_path, 'w') as f:
+        json.dump(af3_data, f, indent=4)
+
+def trim_a3m_lines(position_range, a3m_lines):
+    """
+    Trims A3M lines based on alignment positions (1-based), counting only uppercase and '-' characters.
+
+    Parameters:
+    - position_range: (start, end) — 1-based inclusive positions in the aligned region.
+    - a3m_lines: list of lines from an A3M file (with headers and sequences).
+
+    Returns:
+    - list of trimmed A3M lines.
+    """
+    start_pos, end_pos = position_range
+    start_pos -= 1
+    output_lines = []
+
+    for i, line in enumerate(a3m_lines):
+        if line.startswith('>'):
+            output_lines.append(line)
+        else:
+            seq = line.strip()
+            pos = 0
+            for idx, c in enumerate(seq):
+                if c.isupper() or c == '-':
+                    pos += 1
+                if start_pos == pos:
+                    start_trim = idx
+                elif end_pos == pos:
+                    end_trim = idx
+            trimmed_seq = seq[start_trim:end_trim]
+            output_lines.append(trimmed_seq + '\n')
+
+    return output_lines
+
+def trim_a3m_file(position_range, input_path, output_path):
+    with open(input_path, 'r') as f:
+        lines = f.readlines()
+
+    trimmed_lines = trim_a3m_lines(position_range, lines)
+
+    with open(output_path, 'w') as f:
+        f.writelines(trimmed_lines)
+
+def trim_protein_chain(protein_range, chain_id, input_json_path, output_json_path):
+    start, end = protein_range
+
+    def trim_a3m_string(a3m_string, position_range):
+        """Trim A3M block from a string using the same logic as A3M files."""
+        lines = a3m_string.strip().splitlines(keepends=False)
+        trimmed_lines = trim_a3m_lines(position_range, [line + '\n' for line in lines])
+        return ''.join(trimmed_lines)
+
+    with open(input_json_path, 'r') as f:
+        data = json.load(f)
+
+    for entry in data['sequences']:
+        protein = entry.get('protein')
+        if not protein or protein.get('id') != chain_id:
+            continue
+
+        # Trim sequence
+        full_seq = protein['sequence']
+        protein['sequence'] = full_seq[start - 1:end]
+
+        # Trim modifications
+        if 'modifications' in protein:
+            trimmed_mods = []
+            for mod in protein['modifications']:
+                pos = mod['ptmPosition']
+                if start <= pos <= end:
+                    mod_copy = mod.copy()
+                    mod_copy['ptmPosition'] = pos - start + 1
+                    trimmed_mods.append(mod_copy)
+            protein['modifications'] = trimmed_mods
+
+        # Trim A3M MSAs
+        if 'unpairedMsa' in protein and isinstance(protein['unpairedMsa'], str):
+            protein['unpairedMsa'] = trim_a3m_string(protein['unpairedMsa'], protein_range)
+
+        if 'pairedMsa' in protein and isinstance(protein['pairedMsa'], str):
+            protein['pairedMsa'] = trim_a3m_string(protein['pairedMsa'], protein_range)
+
+    with open(output_json_path, 'w') as f:
+        json.dump(data, f, indent=2)
+
 def split_by_chains(json_path: str) :
     """
     Reads a JSON file, splits sequence entries with multiple chain IDs into separate sequences,
@@ -374,46 +485,31 @@ if __name__ == "__main__":
 
     pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
 
-    structure_name = "t2cac4_optimized2.4"
+    structure_name = "t2cac4_underhead"
     json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized2/{structure_name}.json"
 
     copy_input_json(pure_json, json_path, structure_name)
 
     na_chains = ["A", "B", "C", "D"]
-    templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_full_chain_{id}.cif"
-                           for id in na_chains}
-    templates_path_dict_2 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_head_chain_{id}.cif"
-                           for id in na_chains}
-    templates_path_dict_3 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized2/T2CAC4_ISOLDE_chain_A.cif"
-                           for id in na_chains}
-    paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_paired.a3m"
-    unpaired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_unpaired.a3m"
-    query_range = (1, 468)
-    region_to_mask_1 = (76,85)
-    query_range_2 = (82,468)
-    query_range_3 = (1, 468)
-    region_to_mask_3 = (0, 76)
 
-    # excluded 386 (not visible on the density map, can't see density under the Ab as well)
-    glycosylation_dict = {42: 'G0F',
-                          50: 'G0F',
-                          58: 'G0F',
-                          63: 'G0F',
-                          68: 'G0F',
-                          88: 'M3',
-                          235: 'M3',
-                          146: 'M3'}
+    trim_range = (73, 80)
+    num_seeds = 1000
+
+    paired_msa_path = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_paired.a3m"
+    unpaired_msa_path = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_unpaired.a3m"
+
+    trimmed_paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_paired_{trim_range[0]}-{trim_range[1]}.a3m"
+    trimmed_unpaired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_unpaired_{trim_range[0]}-{trim_range[1]}.a3m"
+
+    trim_a3m_file(trim_range, paired_msa_path, trimmed_paired_msa_path)
+    trim_a3m_file(trim_range, paired_msa_path, trimmed_unpaired_msa_path)
 
     split_by_chains(json_path)
     change_input_json_version(json_path, 2)
+    change_seeds(json_path, num_seeds)
 
     for chain_id in na_chains:
-        add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
-        mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
-        add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
-        add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
-        mask_template_region(json_path, chain_id, region_to_mask_3, template_num=2)
-        for glycan_num, glycan_type in glycosylation_dict.items():
-            add_glycan(json_path, chain_id, glycan_num, glycan_type)
-        add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
+        trim_protein_chain(trim_range, chain_id, json_path, json_path)
+        add_path_to_msa(json_path, chain_id, trimmed_paired_msa_path, trimmed_unpaired_msa_path)
+        clear_templates_for_chain(chain_id, json_path, json_path)
 
