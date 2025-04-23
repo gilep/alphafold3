@@ -485,31 +485,46 @@ if __name__ == "__main__":
 
     pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
 
-    structure_name = "t2cac4_underhead"
+    structure_name = "t2cac4_optimized2.5"
     json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized2/{structure_name}.json"
 
     copy_input_json(pure_json, json_path, structure_name)
 
     na_chains = ["A", "B", "C", "D"]
+    templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_full_chain_{id}.cif"
+                           for id in na_chains}
+    templates_path_dict_2 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_head_chain_{id}.cif"
+                           for id in na_chains}
+    templates_path_dict_3 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized2/T2CAC4_ISOLDE_chain_A.cif"
+                           for id in na_chains}
+    paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_paired.a3m"
+    unpaired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_unpaired.a3m"
+    query_range = (1, 468)
+    region_to_mask_1 = (76,85)
+    query_range_2 = (82,468)
+    query_range_3 = (1, 468)
+    region_to_mask_3 = (0, 80)
 
-    trim_range = (73, 80)
-    num_seeds = 1000
-
-    paired_msa_path = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_paired.a3m"
-    unpaired_msa_path = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_unpaired.a3m"
-
-    trimmed_paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_paired_{trim_range[0]}-{trim_range[1]}.a3m"
-    trimmed_unpaired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_unpaired_{trim_range[0]}-{trim_range[1]}.a3m"
-
-    trim_a3m_file(trim_range, paired_msa_path, trimmed_paired_msa_path)
-    trim_a3m_file(trim_range, paired_msa_path, trimmed_unpaired_msa_path)
+    # excluded 386 (not visible on the density map, can't see density under the Ab as well)
+    glycosylation_dict = {42: 'G0F',
+                          50: 'G0F',
+                          58: 'G0F',
+                          63: 'G0F',
+                          68: 'G0F',
+                          88: 'M3',
+                          235: 'M3',
+                          146: 'M3'}
 
     split_by_chains(json_path)
     change_input_json_version(json_path, 2)
-    change_seeds(json_path, num_seeds)
+    change_seeds(json_path, 50)
 
     for chain_id in na_chains:
-        trim_protein_chain(trim_range, chain_id, json_path, json_path)
-        add_path_to_msa(json_path, chain_id, trimmed_paired_msa_path, trimmed_unpaired_msa_path)
-        clear_templates_for_chain(chain_id, json_path, json_path)
-
+        add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
+        mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
+        add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
+        add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
+        mask_template_region(json_path, chain_id, region_to_mask_3, template_num=2)
+        for glycan_num, glycan_type in glycosylation_dict.items():
+            add_glycan(json_path, chain_id, glycan_num, glycan_type)
+        add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
