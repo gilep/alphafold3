@@ -1,6 +1,11 @@
 import json
 import string
-import os
+
+try:
+    from  alphafold3.common.folding_input import Input
+except ImportError:
+    print('Warning. Alphafold3 is not installed properly')
+
 
 def copy_input_json(json_path: str,  out_path: str, new_name: str,):
     with open(json_path, 'r') as f:
@@ -39,7 +44,7 @@ def change_input_json_version(json_path: str, version: int):
     with open(json_path, 'w') as f:
         json.dump(af3_data, f, indent=4)
 
-def clear_templates_for_chain(chain_id, input_json_path, output_json_path):
+def clear_templates_for_chain(input_json_path, output_json_path, chain_id):
     """
     Sets the 'templates' field to null for a specific protein chain in an AlphaFold3 input JSON.
 
@@ -66,7 +71,7 @@ def change_seeds(json_path: str, num_seeds: int):
     with open(json_path, 'w') as f:
         json.dump(af3_data, f, indent=4)
 
-def trim_a3m_lines(position_range, a3m_lines):
+def trim_a3m_lines(a3m_lines, position_range):
     """
     Trims A3M lines based on alignment positions (1-based), counting only uppercase and '-' characters.
 
@@ -103,7 +108,7 @@ def trim_a3m_file(position_range, input_path, output_path):
     with open(input_path, 'r') as f:
         lines = f.readlines()
 
-    trimmed_lines = trim_a3m_lines(position_range, lines)
+    trimmed_lines = trim_a3m_lines(lines, position_range)
 
     with open(output_path, 'w') as f:
         f.writelines(trimmed_lines)
@@ -114,7 +119,7 @@ def trim_protein_chain(protein_range, chain_id, input_json_path, output_json_pat
     def trim_a3m_string(a3m_string, position_range):
         """Trim A3M block from a string using the same logic as A3M files."""
         lines = a3m_string.strip().splitlines(keepends=False)
-        trimmed_lines = trim_a3m_lines(position_range, [line + '\n' for line in lines])
+        trimmed_lines = trim_a3m_lines([line + '\n' for line in lines], position_range)
         return ''.join(trimmed_lines)
 
     with open(input_json_path, 'r') as f:
@@ -364,7 +369,6 @@ def add_protein_template(json_path, chain_id, mmcif_path, query_range):
             if "templates" not in seq["protein"]:
                 seq["protein"]["templates"] = []
 
-    # Generate indices
     query_indices, template_indices = generate_indices(query_range)
 
     # Locate the protein section with the specified chain ID
@@ -394,63 +398,83 @@ def add_protein_template(json_path, chain_id, mmcif_path, query_range):
 
 def mask_template_region(json_path, chain_id, region_to_mask, template_num=0):
     """
-    Deletes region that corresponds between the template sequence and query sequence, 1-based numbers
+    Deletes region that corresponds between the template sequence and query sequence, 1-based inclusive numbers.
+    If the query index falls in the region_to_mask, remove both the query and corresponding template index.
+
     :param json_path: Path to the AF3 JSON input file.
     :param chain_id: The chain ID of the protein which template should be modified.
-    :param region_to_mask: tuple with two indices specifying the region to mask from the template sequence.
-    :param template_num: Template number to musk (default is 0, 0-based numbers).
+    :param region_to_mask: tuple with two indices (1-based, inclusive) specifying the region to mask.
+    :param template_num: Template number to mask (default is 0, 0-based index).
     """
-    # TODO: rewrite function, it doesn't support multiple masking
     # Read the JSON file
     with open(json_path, 'r') as f:
         af3_data = json.load(f)
 
     # Find the protein chain with the specified chain_id
-    chain_found = False
     for seq in af3_data.get("sequences", []):
         if "protein" in seq and seq["protein"].get("id") == chain_id:
-            chain_found = True
-            # Check if templates exist
-            if "templates" not in seq["protein"] or len(seq["protein"]["templates"]) < template_num+1:
+            templates = seq["protein"].get("templates", [])
+            if len(templates) <= template_num:
                 raise ValueError(f"Template number {template_num} not found for chain {chain_id}")
 
-            # Get the specific template
-            template = seq["protein"]["templates"][template_num]
+            template = templates[template_num]
             query_indices = template["queryIndices"]
             template_indices = template["templateIndices"]
 
-            # Validate region_to_mask
-            start, end = region_to_mask
-            if not (0 <= start <= end < len(template_indices)):
-                raise ValueError(f"Invalid crop region {region_to_mask} for template of length {len(template_indices)}")
+            if len(query_indices) != len(template_indices):
+                raise ValueError("Mismatch in length of queryIndices and templateIndices.")
 
-            # Create new lists excluding the cropped region
-            new_query_indices = query_indices[:start] + query_indices[end:]
-            new_template_indices = template_indices[:start] + template_indices[end:]
+            # 1-based inclusive masking range
+            mask_start, mask_end = region_to_mask
+            if mask_start > mask_end:
+                raise ValueError("Invalid region_to_mask: start must be <= end")
 
-            # Update the template with new indices
+            # Convert range to set of values to mask (1-based)
+            mask_set = set(range(mask_start, mask_end + 1))
+
+            # Filter pairs
+            new_query_indices = []
+            new_template_indices = []
+
+            for q_idx, t_idx in zip(query_indices, template_indices):
+                if q_idx not in mask_set:
+                    new_query_indices.append(q_idx)
+                    new_template_indices.append(t_idx)
+
+            # Update the template
             template["queryIndices"] = new_query_indices
             template["templateIndices"] = new_template_indices
 
-            # Write the modified data back to the file
+            # Write back to JSON
             with open(json_path, 'w') as f:
                 json.dump(af3_data, f, indent=4)
 
-            print(f"Cropped region {region_to_mask} from template {template_num} of chain {chain_id} in {json_path}")
+            print(f"Masked query positions {mask_start}-{mask_end} from template {template_num} of chain {chain_id} in {json_path}")
             return
 
-    if not chain_found:
-        raise ValueError(f"Protein chain {chain_id} not found in {json_path}")
+    raise ValueError(f"Protein chain {chain_id} not found in {json_path}")
 
-def fasta_to_json(fasta_path, output_json_path, model_seeds=(1, 2, 3, 4, 5), ids=("A", "B", "C", "D"),
-                  dialect="alphafold3", version=1):
+
+def fasta_to_homooligomer_json(
+        fasta_path,
+        output_json_path,
+        structure_name=None,
+        model_seeds=(1, 2, 3, 4, 5),
+        ids=("A", "B", "C", "D"),
+        dialect="alphafold3",
+        version=2
+):
     with open(fasta_path, "r") as file:
         lines = file.readlines()
 
     if not lines or lines[0][0] != ">":
         raise ValueError("Invalid FASTA format: missing header line.")
 
-    name = lines[0][1:].strip()
+    if structure_name is not None:
+        name = structure_name
+    else:
+        name = lines[0][1:].strip()
+
     sequence = "".join(line.strip() for line in lines[1:] if line.strip())
 
     if not sequence:
@@ -479,52 +503,96 @@ def fasta_to_json(fasta_path, output_json_path, model_seeds=(1, 2, 3, 4, 5), ids
 
     return json_data
 
+def beautify_json(json_path):
+    """Makes json formatting more readable"""
+    with open(json_path, 'r') as f:
+        json_data = Input.from_json(json_str=f.read(), json_path=None).to_json()
+
+    with open(json_path, "w") as f:
+        f.write(json_data)
+
 
 # Example usage
 if __name__ == "__main__":
 
-    pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
+    ##################################################
+    # BASIC EXAMPLE
+    ##################################################
 
-    structure_name = "t2cac4_optimized2.5"
-    json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized2/{structure_name}.json"
+    json_path = 'test/af3_input.json'   # file will be modified!!!
+    template_path = '/g/kosinski/kgilep/software/AlphaFold3/alphafold3/src/alphafold3/kg/test/template.cif' # should be monomeric
 
-    copy_input_json(pure_json, json_path, structure_name)
+    chain_ids = ["A", "B"]
+    query_range = (2, 96)              # Range of the query residues if the second residue of the query corresponds
+                                        # to the first residue of the template sequence.
 
-    na_chains = ["A", "B", "C", "D"]
-    templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_full_chain_{id}.cif"
-                           for id in na_chains}
-    templates_path_dict_2 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_head_chain_{id}.cif"
-                           for id in na_chains}
-    templates_path_dict_3 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized2/T2CAC4_ISOLDE_chain_A.cif"
-                           for id in na_chains}
-    paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_paired.a3m"
-    unpaired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/t2cac4_data_unpaired.a3m"
-    query_range = (1, 468)
-    region_to_mask_1 = (76,85)
-    query_range_2 = (82,468)
-    query_range_3 = (1, 468)
-    region_to_mask_3 = (0, 80)
+    region_to_mask = (1,40)             # Region in query that will not use the data from the template
 
-    # excluded 386 (not visible on the density map, can't see density under the Ab as well)
-    glycosylation_dict = {42: 'G0F',
-                          50: 'G0F',
-                          58: 'G0F',
-                          63: 'G0F',
-                          68: 'G0F',
-                          88: 'M3',
-                          235: 'M3',
-                          146: 'M3'}
+    # UNCOMMENT TO MAKE JSON FROM FASTA
+    fasta_path = 'test/fasta.fasta'   # should contain only one seq
+    structure_name = "test_name"
+
+    fasta_to_homooligomer_json(
+        fasta_path,
+        json_path,
+        structure_name=structure_name,
+        ids=chain_ids,
+        model_seeds=(1,)
+    )
 
     split_by_chains(json_path)
-    change_input_json_version(json_path, 2)
-    change_seeds(json_path, 10)
+    for chain_id in chain_ids:
+        add_protein_template(json_path, chain_id, template_path, query_range)
+        mask_template_region(json_path, chain_id, region_to_mask, template_num=0)
 
-    for chain_id in na_chains:
-        add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
+    ##################################################
+    # EXAMPLE WITH MULTIPLE TEMPLATES
+    # Takes a homooligomer JSON input file and adds two templates for each of the chains
+    ##################################################
+
+    json_path = 'test/af3_input_homooligomer.json' # file will be modified!!!
+    template_path_1 = 'test/template.cif'          # should be monomeric
+    template_path_2 = 'test/template2.cif'         # should be monomeric
+
+    # paired_msa_path = 'test/paired_msa.cif'.     # extracted from the no interface run
+    # unpaired_msa_path = 'test/unpaired_msa.cif'  # extracted from the no interface run
+
+
+    fasta_path = 'test/fasta.fasta'   # should contain only one seq
+    structure_name = "test_name"
+
+    fasta_to_homooligomer_json(
+        fasta_path,
+        json_path,
+        structure_name=structure_name,
+        ids=chain_ids,
+        model_seeds=(1,2,3)
+    )
+
+    chain_ids = ["A", "B", "C", "D"]
+
+    fasta_to_homooligomer_json(
+        fasta_path,
+        json_path,
+        structure_name=structure_name,
+        ids=chain_ids,
+        model_seeds=(1,2,3)
+    )
+
+    query_range_1 = (2, 101)
+    region_to_mask_1 = (1,40)
+
+    query_range_2 = (1, 110)
+    region_to_mask_2 = (41,110)
+
+    split_by_chains(json_path)
+
+    for chain_id in chain_ids:
+        add_protein_template(json_path, chain_id, template_path_1, query_range_1)
         mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
-        add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
-        add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
-        mask_template_region(json_path, chain_id, region_to_mask_3, template_num=2)
-        for glycan_num, glycan_type in glycosylation_dict.items():
-            add_glycan(json_path, chain_id, glycan_num, glycan_type)
-        add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
+
+        add_protein_template(json_path, chain_id, template_path_2, query_range_2)
+        mask_template_region(json_path, chain_id, region_to_mask_2, template_num=1)
+
+        # optional, it is recommended to let Alphafold3 generate MSA
+        # add_path_to_msa(json_path, chain_id, paired_msa_path=paired_msa_path, unpaired_msa_path=unpaired_msa_path)
