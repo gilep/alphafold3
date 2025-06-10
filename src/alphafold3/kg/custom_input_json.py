@@ -1,4 +1,6 @@
 import json
+import string
+from pathlib import Path
 
 try:
     from  alphafold3.common.folding_input import Input
@@ -180,6 +182,206 @@ def split_by_chains(json_path: str) :
     with open(json_path, 'w') as f:
         json.dump(af3_data, f, indent=4)
 
+def get_nglycan_positions(json_path, chain_id):
+    """Finds the glycans' positions (1-based) that correspond to N
+    in the Asn-X-Ser/Thr (X not Pro) consensus.
+
+    :param json_path: Path to the AF3 JSON input file.
+    :param chain_id: The chain ID to analyze for glycosylation sites.
+    :return: Tuple of 1-based positions of potential N-glycosylation sites.
+    """
+    # Read the JSON file
+    with open(json_path, 'r') as f:
+        af3_data = json.load(f)
+
+    # Find the sequence for the specified chain
+    sequence = None
+    for entry in af3_data["sequences"]:
+        for key, value in entry.items():
+            if isinstance(value, dict) and "id" in value:
+                if isinstance(value["id"], list):
+                    if chain_id in value["id"]:
+                        sequence = value.get("sequence", "")
+                        break
+                elif value["id"] == chain_id:
+                    sequence = value.get("sequence", "")
+                    break
+        if sequence:
+            break
+
+    if not sequence:
+        return ()
+
+    # List to store positions of N-glycosylation sites (1-based)
+    positions = []
+
+    # Check for N-X-S/T pattern (X is not Proline)
+    for i in range(len(sequence) - 2):  # Need at least 3 residues for the motif
+        if (sequence[i] == 'N' and
+                sequence[i + 1] != 'P' and
+                (sequence[i + 2] == 'S' or sequence[i + 2] == 'T')):
+            positions.append(i + 1)  # 1-based indexing
+
+    return tuple(positions)
+def glycan_type_to_data(type_glycan):
+    if type_glycan is None:
+        return None
+    elif type_glycan == "NAG":
+        glycan_ccds = ['NAG',]
+        res_atom_id = 'ND2'
+        glyc_connection_atom = [1, 'C1']
+        inter_bonds = None
+    elif type_glycan == "NAG(NAG)":
+        glycan_ccds = ['NAG', 'NAG']
+        res_atom_id = 'ND2'
+        glyc_connection_atom = [1, 'C1']
+        inter_bonds = [[[1,'O4'],[2, 'C1']],
+                       ]
+    elif type_glycan == "NAG(NAG(BMA))":
+        glycan_ccds = ['NAG', 'NAG', 'BMA']
+        res_atom_id = 'ND2'
+        glyc_connection_atom = [1, 'C1']
+        inter_bonds = [[[1,'O4'],[2, 'C1']],
+                       [[2,'O4'],[3, 'C1']]
+                       ]
+    elif type_glycan == "NAG(NAG(BMA(MAN)(MAN)))" or type_glycan == "M3":
+        glycan_ccds = ['NAG', 'NAG', 'BMA', 'MAN', 'MAN']
+        res_atom_id = 'ND2'
+        glyc_connection_atom = [1, 'C1']
+        inter_bonds = [[[1,'O4'],[2, 'C1']],
+                       [[2,'O4'],[3, 'C1']],
+                       [[3,'O3'],[4, 'C1']],
+                       [[3,'O6'],[5, 'C1']],
+                       ]
+    elif type_glycan == "NAG(NAG(BMA(MAN)(MAN(MAN)(MAN))))" or type_glycan == "M5":
+        glycan_ccds = ['NAG', 'NAG', 'BMA', 'MAN', 'MAN', 'MAN', 'MAN']
+        res_atom_id = 'ND2'
+        glyc_connection_atom = [1, 'C1']
+        inter_bonds = [[[1,'O4'],[2, 'C1']],
+                       [[2,'O4'],[3, 'C1']],
+                       [[3,'O3'],[4, 'C1']],
+                       [[3,'O6'],[5, 'C1']],
+                       [[5, 'O3'], [6, 'C1']],
+                       [[5, 'O6'], [7, 'C1']],
+                       ]
+    elif type_glycan == "NAG(NAG(BMA(MAN(MAN(MAN)))(MAN(MAN)(MAN(MAN)))))" or type_glycan == "M8":
+        glycan_ccds = ['NAG', 'NAG', 'BMA', 'MAN', 'MAN', 'MAN', 'MAN', 'MAN', 'MAN', 'MAN']
+        res_atom_id = 'ND2'
+        glyc_connection_atom = [1, 'C1']
+        inter_bonds = [[[1,'O4'],[2, 'C1']],
+                       [[2,'O4'],[3, 'C1']],
+                       [[3,'O3'],[4, 'C1']],
+                       [[3,'O6'],[5, 'C1']],
+                       [[4, 'O2'], [6, 'C1']],
+                       [[6, 'O2'], [7, 'C1']],
+                       [[5, 'O3'], [8, 'C1']],
+                       [[5, 'O6'], [9, 'C1']],
+                       [[9, 'O2'], [10, 'C1']],
+                       ]
+
+    elif type_glycan == "NAG(FUC)(NAG(BMA(MAN)(MAN)))":
+        glycan_ccds = ['NAG', 'NAG', 'BMA', 'MAN', 'MAN', 'FUC']
+        res_atom_id = 'ND2'
+        glyc_connection_atom = [1, 'C1']
+        inter_bonds = [[[1,'O4'],[2, 'C1']],
+                       [[2,'O4'],[3, 'C1']],
+                       [[3,'O3'],[4, 'C1']],
+                       [[3,'O6'],[5, 'C1']],
+                       [[1, 'O6'], [6, 'C1']],
+                       ]
+    elif type_glycan == "NAG(FUC)(NAG(BMA(MAN(NAG))(MAN(NAG))))" or type_glycan == "G0F":
+        glycan_ccds = ['NAG', 'NAG', 'BMA', 'MAN', 'MAN', 'FUC', 'NAG', 'NAG']
+        res_atom_id = 'ND2'
+        glyc_connection_atom = [1, 'C1']
+        inter_bonds = [[[1,'O4'],[2, 'C1']],
+                       [[2,'O4'],[3, 'C1']],
+                       [[3,'O3'],[4, 'C1']],
+                       [[3,'O6'],[5, 'C1']],
+                       [[1, 'O6'], [6, 'C1']],
+                       [[4, 'O4'], [7, 'C1']],
+                       [[5, 'O4'], [8, 'C1']],
+                       ]
+
+    else:
+        raise ValueError(f"Glycan type {type_glycan} is not supported.")
+    return glycan_ccds, res_atom_id, glyc_connection_atom, inter_bonds
+
+def next_chain_id(existing_ids):
+    """Generate the next available chain ID (A-Z, then AA, AB, etc.)."""
+    all_ids = set(existing_ids)
+
+    # Try single-letter IDs first (A-Z)
+    for letter in string.ascii_uppercase:
+        if letter not in all_ids:
+            return letter
+
+    # Extend to two-letter IDs if necessary (AA, AB, AC, ...)
+    for first in string.ascii_uppercase:
+        for second in string.ascii_uppercase:
+            candidate = first + second
+            if candidate not in all_ids:
+                return candidate
+    raise ValueError("Too many chains! No available IDs.")
+
+def add_glycan(json_path, chain_id: str, position: int, type_glycan: str):
+    """
+    Add glycosylation to the protein chain with the given position.
+
+    :param json_path: Path to the AF3 JSON input file.
+    :param type_glycan: Description of the glycan e.g., "NAG" or "NAG(NAG)".
+    :param chain_id: Chain ID e.g., "A"
+    :param position: Position of the glycosylation. e.g., 42
+    """
+    with open(json_path, 'r') as f:
+        af3_data = json.load(f)
+
+    all_chains = []
+    for seq in af3_data.get("sequences", []):
+        current_chain = list(seq.values())[0]["id"]
+        if type(current_chain) is list:
+            all_chains.extend(current_chain)
+        elif type(current_chain) is str:
+            all_chains.append(current_chain)
+
+    glycan_chain_id = next_chain_id(all_chains)
+    if glycan_chain_id is None:
+        raise ValueError('Chain values are out of range A-Z')
+
+    try:
+        # TODO: deal with glycosylation that is not supported
+        glycan_ccds, res_atom_id, glyc_connection_atom, inter_bonds = glycan_type_to_data(type_glycan)
+    except ValueError as e:
+        raise ValueError(e)
+
+    # make new chain
+    glycan_chain_data = {"ligand" : {
+                            "id" : glycan_chain_id,
+                            "ccdCodes" : glycan_ccds
+                            }
+                        }
+
+    all_chains.append(glycan_chain_id)
+    af3_data["sequences"].append(glycan_chain_data)
+
+    # processing bonds
+    bonded_atom_pairs = []
+    if glyc_connection_atom and res_atom_id:
+        bonded_atom_pairs.append([[chain_id, position, res_atom_id],
+                                  [glycan_chain_id, *glyc_connection_atom]])
+
+    if inter_bonds:
+        bonded_atom_pairs += [[[glycan_chain_id, *atom1], [glycan_chain_id, *atom2]] for atom1, atom2 in inter_bonds]
+
+    if bonded_atom_pairs:
+        af3_data["bondedAtomPairs"] = af3_data.get("bondedAtomPairs", []) + bonded_atom_pairs
+    else:
+        return
+
+    # Update the input file
+    with open(json_path, 'w') as f:
+        json.dump(af3_data, f, indent=4)
+        print(f"Added chain {glycan_chain_id} with glycan {type_glycan} to {json_path}")
+
 def generate_indices(query_range: tuple[int]) -> tuple[list[int], list[int]]:
     """
     Generate query and template indices based on the given range.
@@ -346,70 +548,41 @@ def fasta_to_homooligomer_json(
 # Example usage
 if __name__ == "__main__":
 
-    ##################################################
-    # BASIC EXAMPLE
-    ##################################################
-    json_raw = 'test/af3_input.json'
-    json_path = 'test/af3_input_custom.json'  # file will be modified!!!
-    template_path = '/user/test/template.cif' # should be monomeric, should be full path
-    structure_name = "test_name"
+    name_map = {
+        "A0A0M4AQ34": "NB",
+        "U5XIF8": "N2",
+        "X2FPH5": "N3",
+        "E4UH66": "N3",
+        "D1LRJ8": "N4",
+        "Q20VY9": "N5",
+        "G0KN55": "N6",
+        "A0A1U9GV95": "N7",
+        "L8B2Z3": "N8",
+        "E8Z0S3": "N9",
+        "H6QM95": "N10",
+        "U5N4D7": "N11",
+    }
 
-    chain_ids = ["A"]
-    query_range = (-40, 96)               # Range of the query residues if the second residue of the query corresponds
-                                        # to the first residue of the template sequence.
-
-    region_to_mask = (-40,40)             # Region in query that will not use the data from the template
-
-    copy_input_json(json_raw, json_path, structure_name)
-    split_by_chains(json_path)
-
-    for chain_id in chain_ids:
-        add_protein_template(json_path, chain_id, template_path, query_range)
-        mask_template_region(json_path, chain_id, region_to_mask, template_num=0)
-
-    ##################################################
-    # FULL EXAMPLE WITH HOMOOLIGOMER AND MULTIPLE TEMPLATES
-    ##################################################
-    fasta_path = 'test/fasta.fasta'                      # input fasta wiht one sequnce!
-    json_path = 'test/af3_input_homooligomer.json'       # file will be modified!!!
-    template_path_1 = '/home/test/template.cif'          # should be monomeric
-    template_path_2 = '/home/test/template2.cif'         # should be monomeric
-
-    structure_name = "test"
+    fasta_dir = Path("/g/kosinski/kgilep/flu_na_project/na_variable/sequences")
+    input_json_dir = Path("/g/kosinski/kgilep/flu_na_project/na_variable/af3/input_json")
     chain_ids = ["A", "B", "C", "D"]
+    GLYCAN_TYPE = "M3"
 
-    query_range_1 = (2, 96)
-    region_to_mask_1 = (1,40)
+    for fasta_path in fasta_dir.glob("*.fasta"):
 
-    query_range_2 = (1, 96)
-    region_to_mask_2 = (41,96)
-
-    fasta_to_homooligomer_json(
-        fasta_path,
-        json_path,
-        structure_name=structure_name,
-        ids=chain_ids,
-        model_seeds=(1,2,3)
-    )
-
-    ###############
-    # run AF3 with --norun_inference with
-    # to get test_data.json
-    # replace af3_input_homooligomer.json with test_data.json
-    # `cp path/to/test_data.json path/to/af3_input_homooligomer.json`
-    ###############
-
-    split_by_chains(json_path)
-
-    for chain_id in chain_ids:
-        # delete templates found by AF3
-        clear_templates_for_chain(json_path, json_path, chain_id)
-
-        add_protein_template(json_path, chain_id, template_path_1, query_range_1)
-        mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
-
-        add_protein_template(json_path, chain_id, template_path_2, query_range_2)
-        mask_template_region(json_path, chain_id, region_to_mask_2, template_num=1)
-
-        # optional, it is recommended to let Alphafold3 generate MSA
-        # add_path_to_msa(json_path, chain_id, paired_msa_path=paired_msa_path, unpaired_msa_path=unpaired_msa_path)
+        # Prepare raw JSON input from fasta
+        prot_name = fasta_path.stem
+        if prot_name in name_map:
+            prot_name = f'{name_map[prot_name]}_{prot_name}'
+        json_path = input_json_dir / (prot_name+".json")
+        fasta_to_homooligomer_json(
+                fasta_path,
+                json_path,
+                structure_name=prot_name,
+                ids=chain_ids
+        )
+        # Add glycans
+        glycan_positions = get_nglycan_positions(json_path, chain_ids[0])
+        for glycan_pos in glycan_positions:
+            for chain_id in chain_ids:
+                add_glycan(json_path, chain_id, glycan_pos, GLYCAN_TYPE)
