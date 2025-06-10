@@ -269,8 +269,8 @@ def mask_template_region(json_path, chain_id, region_to_mask, template_num=0):
             if mask_start > mask_end:
                 raise ValueError("Invalid region_to_mask: start must be <= end")
 
-            # Convert range to set of values to mask (1-based)
-            mask_set = set(range(mask_start, mask_end + 1))
+            # Convert range to set of values to mask (0-based)
+            mask_set = set(range(mask_start-1, mask_end))
 
             # Filter pairs
             new_query_indices = []
