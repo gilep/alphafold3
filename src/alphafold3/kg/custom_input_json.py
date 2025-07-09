@@ -741,8 +741,7 @@ def relocate_and_symlink_jsons(base_dir, name_map):
 if __name__ == "__main__":
 
     pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
-
-    structure_name = "t2cac4_optimized3.0"
+    structure_name = "t2cac4_optimized3.1"
     json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized3/{structure_name}.json"
 
     copy_input_json(pure_json, json_path, structure_name)
@@ -757,7 +756,7 @@ if __name__ == "__main__":
     paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/T2CAC4sorted_na_group1_mafft_filtered_restored.a3m"
     unpaired_msa_path = ""
     query_range = (1, 468)
-    region_to_mask_1 = (76,85)
+    region_to_mask_1 = (77,85)
     query_range_2 = (82,468)
     query_range_3 = (1, 468)
     region_to_mask_3 = (0, 76)
@@ -784,6 +783,7 @@ if __name__ == "__main__":
         for glycan_num, glycan_type in glycosylation_dict.items():
             add_glycan(json_path, chain_id, glycan_num, glycan_type)
         add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
+        mutate_position(json_path, chain_id, ""
 
 
 ## For prediction other NAs
