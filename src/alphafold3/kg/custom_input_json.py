@@ -21,9 +21,14 @@ def copy_input_json(json_path: str,  out_path: str, new_name: str,):
     with open(out_path, 'w') as f:
         json.dump(af3_data, f, indent=4)
 
+
 def add_path_to_msa(json_path: str, chain_id: str, paired_msa_path: str, unpaired_msa_path: str):
     """
     Adds paths for paired and unpaired MSA to a specific chain in the JSON file.
+
+    If paired_msa_path or unpaired_msa_path is empty or None, adds
+    'pairedMsa' or 'unpairedMsa' fields with empty string instead of
+    'pairedMsaPath' or 'unpairedMsaPath'.
 
     :param json_path: Path to the AF3 JSON file.
     :param chain_id: Chain ID to update.
@@ -36,8 +41,19 @@ def add_path_to_msa(json_path: str, chain_id: str, paired_msa_path: str, unpaire
     for entry in af3_data["sequences"]:
         for key, value in entry.items():
             if isinstance(value, dict) and "id" in value and value["id"] == chain_id:
-                value["pairedMsaPath"] = paired_msa_path
-                value["unpairedMsaPath"] = unpaired_msa_path
+                if paired_msa_path:
+                    value["pairedMsaPath"] = paired_msa_path
+                    value.pop("pairedMsa", None)  # Remove pairedMsa if present
+                else:
+                    value["pairedMsa"] = ""
+                    value.pop("pairedMsaPath", None)  # Remove pairedMsaPath if present
+
+                if unpaired_msa_path:
+                    value["unpairedMsaPath"] = unpaired_msa_path
+                    value.pop("unpairedMsa", None)  # Remove unpairedMsa if present
+                else:
+                    value["unpairedMsa"] = ""
+                    value.pop("unpairedMsaPath", None)  # Remove unpairedMsaPath if present
 
     with open(json_path, 'w') as f:
         json.dump(af3_data, f, indent=4)
@@ -500,6 +516,117 @@ def mask_template_region(json_path, chain_id, region_to_mask, template_num=0):
 
     raise ValueError(f"Protein chain {chain_id} not found in {json_path}")
 
+
+def mutate_position(json_path: str, chain_id: str, mutation: str) -> None:
+    """
+    Introduces a mutation in an AlphaFold3 input JSON file for a specific chain.
+    Only the first sequence in pairedMsa and unpairedMsa (matching the query sequence) is mutated.
+    Handles MSA paths by reading the files and converting them to pairedMsa/unpairedMsa fields.
+
+    Args:
+        json_path: Path to the AF3 JSON input file.
+        chain_id: Chain ID to mutate (e.g., 'A').
+        mutation: Mutation in format 'positionAminoAcid' (e.g., '76N'), where position is 1-based.
+
+    Raises:
+        ValueError: If mutation format is invalid, chain not found, position out of range,
+                   invalid amino acid, or first MSA sequence doesn't match query.
+        FileNotFoundError: If MSA path files do not exist.
+    """
+    # Validate mutation format (e.g., '76N')
+    mutation_pattern = r'^(\d+)([A-Z])$'
+    match = re.match(mutation_pattern, mutation)
+    if not match:
+        raise ValueError(f"Invalid mutation format: '{mutation}'. Expected format: 'positionAminoAcid' (e.g., '76N')")
+
+    position, new_aa = match.groups()
+    position = int(position)
+
+    # Validate amino acid
+    valid_aa = set('ACDEFGHIKLMNPQRSTVWY')
+    if new_aa not in valid_aa:
+        raise ValueError(f"Invalid amino acid: '{new_aa}'. Must be one of {''.join(sorted(valid_aa))}")
+
+    # Read JSON file
+    json_path = Path(json_path)
+    with open(json_path, 'r') as f:
+        af3_data = json.load(f)
+
+    # Find the protein chain
+    protein_entry = None
+    for entry in af3_data.get('sequences', []):
+        if 'protein' in entry and entry['protein'].get('id') == chain_id:
+            protein_entry = entry['protein']
+            break
+    if not protein_entry:
+        raise ValueError(f"Chain ID '{chain_id}' not found in {json_path}")
+
+    # Validate position and sequence
+    sequence = protein_entry.get('sequence', '')
+    if not sequence:
+        raise ValueError(f"No sequence found for chain '{chain_id}'")
+    if position < 1 or position > len(sequence):
+        raise ValueError(f"Position {position} is out of range for sequence of length {len(sequence)}")
+
+    # Apply mutation to sequence (0-based indexing internally)
+    sequence_list = list(sequence)
+    sequence_list[position - 1] = new_aa
+    protein_entry['sequence'] = ''.join(sequence_list)
+
+    # Process MSAs (from strings or paths)
+    for msa_key, path_key in [('pairedMsa', 'pairedMsaPath'), ('unpairedMsa', 'unpairedMsaPath')]:
+        msa = protein_entry.get(msa_key, '')
+        msa_path = protein_entry.get(path_key)
+
+        # If MSA path is present, read the file
+        if msa_path:
+            msa_path = Path(msa_path)
+            if not msa_path.exists():
+                raise FileNotFoundError(f"MSA file not found: {msa_path}")
+            with open(msa_path, 'r') as f:
+                msa = f.read()
+
+        # Skip if no MSA content
+        if not msa:
+            continue
+
+        # Split MSA into lines
+        msa_lines = msa.strip().splitlines()
+        if not msa_lines:
+            continue
+
+        # Process MSA sequences
+        new_msa_lines = []
+        is_first_sequence = True
+        for line in msa_lines:
+            if line.startswith('>'):
+                new_msa_lines.append(line)
+                is_first_sequence = False
+                continue
+
+            seq = line.strip()
+            if is_first_sequence:
+                # First sequence matches query, so use position directly
+                if len(seq) != len(sequence):
+                    raise ValueError(f"First sequence in {msa_key} does not match query sequence length")
+                if seq != sequence:
+                    raise ValueError(f"First sequence in {msa_key} does not match query sequence")
+                seq_list = list(seq)
+                seq_list[position - 1] = new_aa
+                new_msa_lines.append(''.join(seq_list))
+            else:
+                # Keep subsequent sequences unchanged
+                new_msa_lines.append(seq)
+
+        # Update MSA in JSON and remove path if present
+        protein_entry[msa_key] = '\n'.join(new_msa_lines) + '\n'
+        if msa_path:
+            protein_entry.pop(path_key, None)
+
+    # Write updated JSON
+    with open(json_path, 'w') as f:
+        json.dump(af3_data, f, indent=4)
+
 def download_uniprot_fasta(accession, output_dir):
     """
     Download a FASTA file for a single UniProt accession and save it to the output directory.
@@ -613,91 +740,140 @@ def relocate_and_symlink_jsons(base_dir, name_map):
 # Example usage
 if __name__ == "__main__":
 
-    # name_map = {
-    #     "A0A0M4AQ34": "NB",
-    #     "U5XIF8": "N2",
-    #     "X2FPH5": "N3",
-    #     "E4UH66": "N3",
-    #     "D1LRJ8": "N4",
-    #     "Q20VY9": "N5",
-    #     "G0KN55": "N6",
-    #     "A0A1U9GV95": "N7",
-    #     "L8B2Z3": "N8",
-    #     "E8Z0S3": "N9",
-    #     "H6QM95": "N10",
-    #     "U5N4D7": "N11",
-    # }
-    # name_map = {
-    #     "A0A8K1EM63" : "N2"
-    # }
-    # name_map = {
-    #     "A3KE38" : "N3",
-    #     "C4LLY1" : "N4",
-    #     "N12" : "",
-    # }
+    pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
 
-    name_map = {
-        "Q5BUA8": "N8_1",  # two PP, first subgroup of N8 NAs
-        "A0A023LRK0": "N8_main",  # most abundant, predicted was from this group
-        "A0A0B4V008": "N8_3",  # third subgroup
-        "E3JMK4": "N8_rare",  # only few such
+    structure_name = "t2cac4_optimized3.0"
+    json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized3/{structure_name}.json"
 
-        "P03478": "N5_del",  # weird variant with the deletion underhead
-        "H8P788": "N5_other",  # different from the used
-        "G0KJY5": "N5_main",  # most abundant
-    }
+    copy_input_json(pure_json, json_path, structure_name)
 
-    name_map = {
-        # N6
-        "G7WV18": "N6_1_IKED",  # group 1 with IKED motif
-        "Q6XV50": "N6_1_del",  # group 1 with deletion
-        "X2G052": "N6_2_NKNE",  # group 2 with NKNE motif
-        "D6RUH4": "N6_2_del1",  # group 2 with deletion1
-        "F1BDM1": "N6_2_del2",  # group 2 with deletion2
+    na_chains = ["A", "B", "C", "D"]
+    templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_full_chain_{id}.cif"
+                           for id in na_chains}
+    templates_path_dict_2 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_head_chain_{id}.cif"
+                           for id in na_chains}
+    templates_path_dict_3 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized2/T2CAC4_ISOLDE_chain_A.cif"
+                           for id in na_chains}
+    paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/T2CAC4sorted_na_group1_mafft_filtered_restored.a3m"
+    unpaired_msa_path = ""
+    query_range = (1, 468)
+    region_to_mask_1 = (76,85)
+    query_range_2 = (82,468)
+    query_range_3 = (1, 468)
+    region_to_mask_3 = (0, 76)
 
-        # N9
-        "A0A0B4Q774": "N9_del",  # with deletion
-    }
+    # excluded 386 (not visible on the density map, can't see density under the Ab as well)
+    glycosylation_dict = {42: 'G0F',
+                          50: 'G0F',
+                          58: 'G0F',
+                          63: 'G0F',
+                          68: 'G0F',
+                          88: 'M3',
+                          235: 'M3',
+                          146: 'M3'}
 
-    name_map = {
-        # N3
-        "Q7TF26": "N3_1_del",  # group 1 with deletion
+    split_by_chains(json_path)
+    change_input_json_version(json_path, 2)
 
-        # N7
-        "A0A1S6GT84": "N7_1_main",  # group 1 (main)
-        "A0A0A7CIT3": "N7_1.5_del",  # deletion between group 1 and 2
-        "A0A024CQQ5": "N7_2",  # group 2
-        "P88837": "N7_3",  # small group 3
-    }
+    for chain_id in na_chains:
+        add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
+        mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
+        add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
+        add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
+        mask_template_region(json_path, chain_id, region_to_mask_3, template_num=2)
+        for glycan_num, glycan_type in glycosylation_dict.items():
+            add_glycan(json_path, chain_id, glycan_num, glycan_type)
+        add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
 
-    name_map = {
-        # N2
-        "V5SLV7": "N2_logo"
-    }
 
-    # fasta_dir = Path("/g/kosinski/kgilep/flu_na_project/na_variable/sequences")
-    # input_json_dir = Path("/g/kosinski/kgilep/flu_na_project/na_variable/af3/input_json")
-    # chain_ids = ["A", "B", "C", "D"]
-    # GLYCAN_TYPE = "M3"
-    # NUM_SEEDS = 10
-    #
-    # for uniprot, na_type in name_map.items():
-    #     download_uniprot_fasta(uniprot, fasta_dir)
-    #     prot_name = f'{na_type}_{uniprot}'
-    #     fasta_path = fasta_dir / f"{uniprot}.fasta"
-    #     json_path = input_json_dir / (prot_name+".json")
-    #     fasta_to_homooligomer_json(
-    #             fasta_path,
-    #             json_path,
-    #             structure_name=prot_name,
-    #             ids=chain_ids,
-    #             model_seeds=(tuple(range(NUM_SEEDS)))
-    #     )
-    #     # Add glycans
-    #     glycan_positions = get_nglycan_positions(json_path, chain_ids[0])
-    #     for glycan_pos in glycan_positions:
-    #         for chain_id in chain_ids:
-    #             add_glycan(json_path, chain_id, glycan_pos, GLYCAN_TYPE)
-
-    result_dir="/scratch/kgilep/flu_na_project/na_variable/af3"
-    relocate_and_symlink_jsons(result_dir, name_map)
+## For prediction other NAs
+# if __name__ == "__main__":
+#
+#     # name_map = {
+#     #     "A0A0M4AQ34": "NB",
+#     #     "U5XIF8": "N2",
+#     #     "X2FPH5": "N3",
+#     #     "E4UH66": "N3",
+#     #     "D1LRJ8": "N4",
+#     #     "Q20VY9": "N5",
+#     #     "G0KN55": "N6",
+#     #     "A0A1U9GV95": "N7",
+#     #     "L8B2Z3": "N8",
+#     #     "E8Z0S3": "N9",
+#     #     "H6QM95": "N10",
+#     #     "U5N4D7": "N11",
+#     # }
+#     # name_map = {
+#     #     "A0A8K1EM63" : "N2"
+#     # }
+#     # name_map = {
+#     #     "A3KE38" : "N3",
+#     #     "C4LLY1" : "N4",
+#     #     "N12" : "",
+#     # }
+#
+#     name_map = {
+#         "Q5BUA8": "N8_1",  # two PP, first subgroup of N8 NAs
+#         "A0A023LRK0": "N8_main",  # most abundant, predicted was from this group
+#         "A0A0B4V008": "N8_3",  # third subgroup
+#         "E3JMK4": "N8_rare",  # only few such
+#
+#         "P03478": "N5_del",  # weird variant with the deletion underhead
+#         "H8P788": "N5_other",  # different from the used
+#         "G0KJY5": "N5_main",  # most abundant
+#     }
+#
+#     name_map = {
+#         # N6
+#         "G7WV18": "N6_1_IKED",  # group 1 with IKED motif
+#         "Q6XV50": "N6_1_del",  # group 1 with deletion
+#         "X2G052": "N6_2_NKNE",  # group 2 with NKNE motif
+#         "D6RUH4": "N6_2_del1",  # group 2 with deletion1
+#         "F1BDM1": "N6_2_del2",  # group 2 with deletion2
+#
+#         # N9
+#         "A0A0B4Q774": "N9_del",  # with deletion
+#     }
+#
+#     name_map = {
+#         # N3
+#         "Q7TF26": "N3_1_del",  # group 1 with deletion
+#
+#         # N7
+#         "A0A1S6GT84": "N7_1_main",  # group 1 (main)
+#         "A0A0A7CIT3": "N7_1.5_del",  # deletion between group 1 and 2
+#         "A0A024CQQ5": "N7_2",  # group 2
+#         "P88837": "N7_3",  # small group 3
+#     }
+#
+#     name_map = {
+#         # N2
+#         "V5SLV7": "N2_logo"
+#     }
+#
+#     # fasta_dir = Path("/g/kosinski/kgilep/flu_na_project/na_variable/sequences")
+#     # input_json_dir = Path("/g/kosinski/kgilep/flu_na_project/na_variable/af3/input_json")
+#     # chain_ids = ["A", "B", "C", "D"]
+#     # GLYCAN_TYPE = "M3"
+#     # NUM_SEEDS = 10
+#     #
+#     # for uniprot, na_type in name_map.items():
+#     #     download_uniprot_fasta(uniprot, fasta_dir)
+#     #     prot_name = f'{na_type}_{uniprot}'
+#     #     fasta_path = fasta_dir / f"{uniprot}.fasta"
+#     #     json_path = input_json_dir / (prot_name+".json")
+#     #     fasta_to_homooligomer_json(
+#     #             fasta_path,
+#     #             json_path,
+#     #             structure_name=prot_name,
+#     #             ids=chain_ids,
+#     #             model_seeds=(tuple(range(NUM_SEEDS)))
+#     #     )
+#     #     # Add glycans
+#     #     glycan_positions = get_nglycan_positions(json_path, chain_ids[0])
+#     #     for glycan_pos in glycan_positions:
+#     #         for chain_id in chain_ids:
+#     #             add_glycan(json_path, chain_id, glycan_pos, GLYCAN_TYPE)
+#
+#     result_dir="/scratch/kgilep/flu_na_project/na_variable/af3"
+#     relocate_and_symlink_jsons(result_dir, name_map)
