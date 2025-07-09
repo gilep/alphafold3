@@ -1,6 +1,10 @@
 import json
 import string
 from pathlib import Path
+import os
+import shutil
+from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
 
 try:
     from  alphafold3.common.folding_input import Input
@@ -496,6 +500,28 @@ def mask_template_region(json_path, chain_id, region_to_mask, template_num=0):
 
     raise ValueError(f"Protein chain {chain_id} not found in {json_path}")
 
+def download_uniprot_fasta(accession, output_dir):
+    """
+    Download a FASTA file for a single UniProt accession and save it to the output directory.
+
+    Parameters:
+        accession (str): UniProt accession string (e.g., "Q5BUA8")
+        output_dir (str or Path): Path to the output directory
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    url = f"https://rest.uniprot.org/uniprotkb/{accession}.fasta"
+    try:
+        with urlopen(url) as response:
+            fasta_data = response.read().decode("utf-8")
+            fasta_path = output_dir / f"{accession}.fasta"
+            fasta_path.write_text(fasta_data)
+            print(f"Downloaded {accession} -> {fasta_path}")
+    except HTTPError as e:
+        print(f"HTTP error for {accession}: {e.code}")
+    except URLError as e:
+        print(f"URL error for {accession}: {e.reason}")
 
 def fasta_to_homooligomer_json(
         fasta_path,
@@ -545,44 +571,133 @@ def fasta_to_homooligomer_json(
 
     return json_data
 
+def relocate_and_symlink_jsons(base_dir, name_map):
+    base_dir = Path(base_dir)
+    data_dir = base_dir / "data"
+    link_dir = base_dir / "link_data"
+
+    data_dir.mkdir(exist_ok=True)
+    link_dir.mkdir(exist_ok=True)
+
+    for acc, shortname in name_map.items():
+        pattern = f"{shortname.lower()}_{acc.lower()}"
+        target_dir = base_dir / pattern
+
+        if not target_dir.exists():
+            print(f"Warning: {target_dir} does not exist.")
+            continue
+
+        json_files = list(target_dir.glob("*_data.json"))
+        if not json_files:
+            print(f"No *_data.json found in {target_dir}")
+            continue
+
+        for json_file in json_files:
+            new_path = data_dir / json_file.name
+            shutil.move(str(json_file), new_path)
+
+            relative_target = os.path.relpath(new_path, start=link_dir)
+            symlink_path = link_dir / json_file.name
+            if symlink_path.exists() or symlink_path.is_symlink():
+                symlink_path.unlink()
+            symlink_path.symlink_to(relative_target)
+
+            print(f"Moved: {json_file} -> {new_path}")
+            print(f"Linked: {symlink_path} -> {relative_target}")
+
+        try:
+            target_dir.rmdir()
+        except OSError:
+            print(f"Could not remove {target_dir} (not empty or in use)")
+
 # Example usage
 if __name__ == "__main__":
 
+    # name_map = {
+    #     "A0A0M4AQ34": "NB",
+    #     "U5XIF8": "N2",
+    #     "X2FPH5": "N3",
+    #     "E4UH66": "N3",
+    #     "D1LRJ8": "N4",
+    #     "Q20VY9": "N5",
+    #     "G0KN55": "N6",
+    #     "A0A1U9GV95": "N7",
+    #     "L8B2Z3": "N8",
+    #     "E8Z0S3": "N9",
+    #     "H6QM95": "N10",
+    #     "U5N4D7": "N11",
+    # }
+    # name_map = {
+    #     "A0A8K1EM63" : "N2"
+    # }
+    # name_map = {
+    #     "A3KE38" : "N3",
+    #     "C4LLY1" : "N4",
+    #     "N12" : "",
+    # }
+
     name_map = {
-        "A0A0M4AQ34": "NB",
-        "U5XIF8": "N2",
-        "X2FPH5": "N3",
-        "E4UH66": "N3",
-        "D1LRJ8": "N4",
-        "Q20VY9": "N5",
-        "G0KN55": "N6",
-        "A0A1U9GV95": "N7",
-        "L8B2Z3": "N8",
-        "E8Z0S3": "N9",
-        "H6QM95": "N10",
-        "U5N4D7": "N11",
+        "Q5BUA8": "N8_1",  # two PP, first subgroup of N8 NAs
+        "A0A023LRK0": "N8_main",  # most abundant, predicted was from this group
+        "A0A0B4V008": "N8_3",  # third subgroup
+        "E3JMK4": "N8_rare",  # only few such
+
+        "P03478": "N5_del",  # weird variant with the deletion underhead
+        "H8P788": "N5_other",  # different from the used
+        "G0KJY5": "N5_main",  # most abundant
     }
 
-    fasta_dir = Path("/g/kosinski/kgilep/flu_na_project/na_variable/sequences")
-    input_json_dir = Path("/g/kosinski/kgilep/flu_na_project/na_variable/af3/input_json")
-    chain_ids = ["A", "B", "C", "D"]
-    GLYCAN_TYPE = "M3"
+    name_map = {
+        # N6
+        "G7WV18": "N6_1_IKED",  # group 1 with IKED motif
+        "Q6XV50": "N6_1_del",  # group 1 with deletion
+        "X2G052": "N6_2_NKNE",  # group 2 with NKNE motif
+        "D6RUH4": "N6_2_del1",  # group 2 with deletion1
+        "F1BDM1": "N6_2_del2",  # group 2 with deletion2
 
-    for fasta_path in fasta_dir.glob("*.fasta"):
+        # N9
+        "A0A0B4Q774": "N9_del",  # with deletion
+    }
 
-        # Prepare raw JSON input from fasta
-        prot_name = fasta_path.stem
-        if prot_name in name_map:
-            prot_name = f'{name_map[prot_name]}_{prot_name}'
-        json_path = input_json_dir / (prot_name+".json")
-        fasta_to_homooligomer_json(
-                fasta_path,
-                json_path,
-                structure_name=prot_name,
-                ids=chain_ids
-        )
-        # Add glycans
-        glycan_positions = get_nglycan_positions(json_path, chain_ids[0])
-        for glycan_pos in glycan_positions:
-            for chain_id in chain_ids:
-                add_glycan(json_path, chain_id, glycan_pos, GLYCAN_TYPE)
+    name_map = {
+        # N3
+        "Q7TF26": "N3_1_del",  # group 1 with deletion
+
+        # N7
+        "A0A1S6GT84": "N7_1_main",  # group 1 (main)
+        "A0A0A7CIT3": "N7_1.5_del",  # deletion between group 1 and 2
+        "A0A024CQQ5": "N7_2",  # group 2
+        "P88837": "N7_3",  # small group 3
+    }
+
+    name_map = {
+        # N2
+        "V5SLV7": "N2_logo"
+    }
+
+    # fasta_dir = Path("/g/kosinski/kgilep/flu_na_project/na_variable/sequences")
+    # input_json_dir = Path("/g/kosinski/kgilep/flu_na_project/na_variable/af3/input_json")
+    # chain_ids = ["A", "B", "C", "D"]
+    # GLYCAN_TYPE = "M3"
+    # NUM_SEEDS = 10
+    #
+    # for uniprot, na_type in name_map.items():
+    #     download_uniprot_fasta(uniprot, fasta_dir)
+    #     prot_name = f'{na_type}_{uniprot}'
+    #     fasta_path = fasta_dir / f"{uniprot}.fasta"
+    #     json_path = input_json_dir / (prot_name+".json")
+    #     fasta_to_homooligomer_json(
+    #             fasta_path,
+    #             json_path,
+    #             structure_name=prot_name,
+    #             ids=chain_ids,
+    #             model_seeds=(tuple(range(NUM_SEEDS)))
+    #     )
+    #     # Add glycans
+    #     glycan_positions = get_nglycan_positions(json_path, chain_ids[0])
+    #     for glycan_pos in glycan_positions:
+    #         for chain_id in chain_ids:
+    #             add_glycan(json_path, chain_id, glycan_pos, GLYCAN_TYPE)
+
+    result_dir="/scratch/kgilep/flu_na_project/na_variable/af3"
+    relocate_and_symlink_jsons(result_dir, name_map)
