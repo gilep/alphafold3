@@ -755,33 +755,36 @@ if __name__ == "__main__":
         ["76D", "77R", "78Q", "79D", "82P"],
         ["77R", "78K", "79D", "80K"],
         ["78C"],
+        ["79C"],
         ["77R", "78C", "82P"], #N2
         ["74E", "75K","76E", "77I", "78C", "79P", "80K", "81P"], #N2
     ]
 
     for mutations in mutations_collection:
-        structure_name = "t2cac4_optimized3.1"
+        structure_name = "t2cac4_optimized3.2"
         if mutations:
             structure_name = f"{structure_name}_{'_'.join(mutations)}"
 
-        json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized3/mutants/{structure_name}.json"
+        json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized3/mutants3.2/{structure_name}.json"
 
         copy_input_json(pure_json, json_path, structure_name)
 
         na_chains = ["A", "B", "C", "D"]
-        templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_full_chain_{id}.cif"
-                               for id in na_chains}
-        templates_path_dict_2 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_head_chain_{id}.cif"
-                               for id in na_chains}
-        templates_path_dict_3 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized2/T2CAC4_ISOLDE_chain_A.cif"
-                               for id in na_chains}
+        # templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_full_chain_{id}.cif"
+        #                        for id in na_chains}
+        # templates_path_dict_2 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_head_chain_{id}.cif"
+        #                        for id in na_chains}
+        # templates_path_dict_3 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized2/T2CAC4_ISOLDE_chain_A.cif"
+        #                        for id in na_chains}
         paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/T2CAC4sorted_na_group1_mafft_filtered_restored.a3m"
+        templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized3/T2CAC4_af3_fullglyc_250416_chain_{id}.cif"
+                               for id in na_chains}
         unpaired_msa_path = ""
         query_range = (1, 468)
-        region_to_mask_1 = (77,85)
-        query_range_2 = (82,468)
-        query_range_3 = (1, 468)
-        region_to_mask_3 = (0, 76)
+        # region_to_mask_1 = (77,85)
+        # query_range_2 = (82,468)
+        # query_range_3 = (1, 468)
+        # region_to_mask_3 = (0, 76)
 
         # excluded 386 (not visible on the density map, can't see density under the Ab as well)
         glycosylation_dict = {42: 'G0F',
@@ -798,10 +801,10 @@ if __name__ == "__main__":
 
         for chain_id in na_chains:
             add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
-            mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
-            add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
-            add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
-            mask_template_region(json_path, chain_id, region_to_mask_3, template_num=2)
+            # mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
+            # add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
+            # add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
+            # mask_template_region(json_path, chain_id, region_to_mask_3, template_num=2)
             for glycan_num, glycan_type in glycosylation_dict.items():
                 add_glycan(json_path, chain_id, glycan_num, glycan_type)
             add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)

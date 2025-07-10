@@ -80,9 +80,11 @@ def alignment_files_from_json(json_path: str, output_dir: str):
 
 
 if __name__ == "__main__":
+    template_path = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized3/T2CAC4_af3_fullglyc_250416.cif"
+    out_path = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized3/"
     # If using AlphaFold models as templates, update the release date
-    update_release_date("test/template.cif")
+    update_release_date(template_path)
 
     # AlphaFold3 takes only one chain mmcif as a template
     # will create template_chain_A.cif in the test/output directory
-    split_cif_by_chains("test/template.cif", "test/output", chains_list=['A'])
+    split_cif_by_chains(template_path, out_path, chains_list=['A', 'B', 'C', 'D'])
