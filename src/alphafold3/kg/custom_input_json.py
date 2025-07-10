@@ -3,6 +3,7 @@ import string
 from pathlib import Path
 import os
 import shutil
+import re
 from urllib.request import urlopen
 from urllib.error import HTTPError, URLError
 
@@ -601,7 +602,6 @@ def mutate_position(json_path: str, chain_id: str, mutation: str) -> None:
         for line in msa_lines:
             if line.startswith('>'):
                 new_msa_lines.append(line)
-                is_first_sequence = False
                 continue
 
             seq = line.strip()
@@ -614,6 +614,7 @@ def mutate_position(json_path: str, chain_id: str, mutation: str) -> None:
                 seq_list = list(seq)
                 seq_list[position - 1] = new_aa
                 new_msa_lines.append(''.join(seq_list))
+                is_first_sequence = False
             else:
                 # Keep subsequent sequences unchanged
                 new_msa_lines.append(seq)
@@ -741,49 +742,71 @@ def relocate_and_symlink_jsons(base_dir, name_map):
 if __name__ == "__main__":
 
     pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
-    structure_name = "t2cac4_optimized3.1"
-    json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized3/{structure_name}.json"
 
-    copy_input_json(pure_json, json_path, structure_name)
+    mutations_collection = [
+        ["77R", "79P"],
+        ["77R", "79P", "82P"],
+        ["77D", "79P"],
+        ["77D", "78K"],
+        ["77D", "78K", "79P"],
+        ["75P", "76P", "77D", "78K", "79P"],
+        ["75P", "76P", "77D", "78K", "79P", "82P"],
+        ["75P", "76T", "77D", "78K", "79P", "82P"],
+        ["76D", "77R", "78Q", "79D", "82P"],
+        ["77R", "78K", "79D", "80K"],
+        ["78C"],
+        ["77R", "78C", "82P"], #N2
+        ["74E", "75K","76E", "77I", "78C", "79P", "80K", "81P"], #N2
+    ]
 
-    na_chains = ["A", "B", "C", "D"]
-    templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_full_chain_{id}.cif"
-                           for id in na_chains}
-    templates_path_dict_2 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_head_chain_{id}.cif"
-                           for id in na_chains}
-    templates_path_dict_3 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized2/T2CAC4_ISOLDE_chain_A.cif"
-                           for id in na_chains}
-    paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/T2CAC4sorted_na_group1_mafft_filtered_restored.a3m"
-    unpaired_msa_path = ""
-    query_range = (1, 468)
-    region_to_mask_1 = (77,85)
-    query_range_2 = (82,468)
-    query_range_3 = (1, 468)
-    region_to_mask_3 = (0, 76)
+    for mutations in mutations_collection:
+        structure_name = "t2cac4_optimized3.1"
+        if mutations:
+            structure_name = f"{structure_name}_{'_'.join(mutations)}"
 
-    # excluded 386 (not visible on the density map, can't see density under the Ab as well)
-    glycosylation_dict = {42: 'G0F',
-                          50: 'G0F',
-                          58: 'G0F',
-                          63: 'G0F',
-                          68: 'G0F',
-                          88: 'M3',
-                          235: 'M3',
-                          146: 'M3'}
+        json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized3/mutants/{structure_name}.json"
 
-    split_by_chains(json_path)
-    change_input_json_version(json_path, 2)
+        copy_input_json(pure_json, json_path, structure_name)
 
-    for chain_id in na_chains:
-        add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
-        mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
-        add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
-        add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
-        mask_template_region(json_path, chain_id, region_to_mask_3, template_num=2)
-        for glycan_num, glycan_type in glycosylation_dict.items():
-            add_glycan(json_path, chain_id, glycan_num, glycan_type)
-        add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
-        mutate_position(json_path, chain_id, ""
+        na_chains = ["A", "B", "C", "D"]
+        templates_path_dict = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_full_chain_{id}.cif"
+                               for id in na_chains}
+        templates_path_dict_2 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized1/T2CAC4_head_chain_{id}.cif"
+                               for id in na_chains}
+        templates_path_dict_3 = {id : f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/templates/optimized2/T2CAC4_ISOLDE_chain_A.cif"
+                               for id in na_chains}
+        paired_msa_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/msa/T2CAC4sorted_na_group1_mafft_filtered_restored.a3m"
+        unpaired_msa_path = ""
+        query_range = (1, 468)
+        region_to_mask_1 = (77,85)
+        query_range_2 = (82,468)
+        query_range_3 = (1, 468)
+        region_to_mask_3 = (0, 76)
+
+        # excluded 386 (not visible on the density map, can't see density under the Ab as well)
+        glycosylation_dict = {42: 'G0F',
+                              50: 'G0F',
+                              58: 'G0F',
+                              63: 'G0F',
+                              68: 'G0F',
+                              88: 'M3',
+                              235: 'M3',
+                              146: 'M3'}
+
+        split_by_chains(json_path)
+        change_input_json_version(json_path, 2)
+
+        for chain_id in na_chains:
+            add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
+            mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
+            add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
+            add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
+            mask_template_region(json_path, chain_id, region_to_mask_3, template_num=2)
+            for glycan_num, glycan_type in glycosylation_dict.items():
+                add_glycan(json_path, chain_id, glycan_num, glycan_type)
+            add_path_to_msa(json_path, chain_id, paired_msa_path, unpaired_msa_path)
+            for mutant in mutations:
+                mutate_position(json_path, chain_id, mutant)
 
 
 ## For prediction other NAs
