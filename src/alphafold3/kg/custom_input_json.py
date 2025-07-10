@@ -86,10 +86,10 @@ def clear_templates_for_chain(input_json_path, output_json_path, chain_id):
     with open(output_json_path, 'w') as f:
         json.dump(data, f, indent=2)
 
-def change_seeds(json_path: str, num_seeds: int):
+def change_seeds(json_path: str, num_seeds: int, start_seed = 1):
     with open(json_path, 'r') as f:
         af3_data = json.load(f)
-    af3_data['modelSeeds'] = list(range(1, num_seeds+1))
+    af3_data['modelSeeds'] = list(range(start_seed, num_seeds+start_seed))
     with open(json_path, 'w') as f:
         json.dump(af3_data, f, indent=4)
 
