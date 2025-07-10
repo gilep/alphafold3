@@ -743,29 +743,40 @@ if __name__ == "__main__":
 
     pure_json = "/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/na_nc07.json"
 
-    mutations_collection = [
-        ["77R", "79P"],
-        ["77R", "79P", "82P"],
-        ["77D", "79P"],
-        ["77D", "78K"],
-        ["77D", "78K", "79P"],
-        ["75P", "76P", "77D", "78K", "79P"],
-        ["75P", "76P", "77D", "78K", "79P", "82P"],
-        ["75P", "76T", "77D", "78K", "79P", "82P"],
-        ["76D", "77R", "78Q", "79D", "82P"],
-        ["77R", "78K", "79D", "80K"],
-        ["78C"],
-        ["79C"],
-        ["77R", "78C", "82P"], #N2
-        ["74E", "75K","76E", "77I", "78C", "79P", "80K", "81P"], #N2
-    ]
+    # mutations_collection = [
+    #     ["77R", "79P"],
+    #     ["77R", "79P", "82P"],
+    #     ["77D", "79P"],
+    #     ["77D", "78K"],
+    #     ["77D", "78K", "79P"],
+    #     ["75P", "76P", "77D", "78K", "79P"],
+    #     ["75P", "76P", "77D", "78K", "79P", "82P"],
+    #     ["75P", "76T", "77D", "78K", "79P", "82P"],
+    #     ["76D", "77R", "78Q", "79D", "82P"],
+    #     ["77R", "78K", "79D", "80K"],
+    #     ["78C"],
+    #     ["79C"],
+    #     ["77R", "78C", "82P"], #N2
+    #     ["74E", "75K","76E", "77I", "78C", "79P", "80K", "81P"], #N2
+    # ]
 
+    mutations_collection = [
+        ["77R"],
+        ["77E"],
+        ["77I"],
+        ["77D"],
+        ["77T", "79D"],
+        ["82P"],
+        ["76D", "77R", "79D"],
+        ["75P", "76P", "77D", "78K", "79P"],
+        ["74E", "75K","76E", "77I", "78C", "79P", "80K"], #N2
+    ]
     for mutations in mutations_collection:
-        structure_name = "t2cac4_optimized3.2"
+        structure_name = "t2cac4_optimized3.3"
         if mutations:
             structure_name = f"{structure_name}_{'_'.join(mutations)}"
 
-        json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized3/mutants3.2/{structure_name}.json"
+        json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized3/mutants3.3/{structure_name}.json"
 
         copy_input_json(pure_json, json_path, structure_name)
 
@@ -796,6 +807,7 @@ if __name__ == "__main__":
                               235: 'M3',
                               146: 'M3'}
 
+        change_seeds(json_path, 5, 6)
         split_by_chains(json_path)
         change_input_json_version(json_path, 2)
 
