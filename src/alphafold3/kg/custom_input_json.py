@@ -760,23 +760,37 @@ if __name__ == "__main__":
     #     ["74E", "75K","76E", "77I", "78C", "79P", "80K", "81P"], #N2
     # ]
 
+    # mutations_collection = [
+    #     ["77R"],
+    #     ["77E"],
+    #     ["77I"],
+    #     ["77D"],
+    #     ["77T", "79D"],
+    #     ["82P"],
+    #     ["76D", "77R", "79D"],
+    #     ["75P", "76P", "77D", "78K", "79P"],
+    #     ["74E", "75K","76E", "77I", "78C", "79P", "80K"], #N2
+    # ]
+
     mutations_collection = [
-        ["77R"],
-        ["77E"],
         ["77I"],
-        ["77D"],
-        ["77T", "79D"],
-        ["82P"],
-        ["76D", "77R", "79D"],
-        ["75P", "76P", "77D", "78K", "79P"],
+        ["77I", "82P"],
+        ["78C", "82P"],
+        ["78C"],
+        ["77I", "78C", "82P"],
+        ["77I"],
+        ["76T", "77R", "78K", "79D"],
+        ["75V", "76T", "77E"],
+        ["77I","78C", "79P"],
+        ["77I", "78C", "79P", "82P"],
         ["74E", "75K","76E", "77I", "78C", "79P", "80K"], #N2
     ]
     for mutations in mutations_collection:
-        structure_name = "t2cac4_optimized3.3"
+        structure_name = "t2cac4_optimized3.4"
         if mutations:
             structure_name = f"{structure_name}_{'_'.join(mutations)}"
 
-        json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized3/mutants3.3/{structure_name}.json"
+        json_path = f"/g/kosinski/kgilep/flu_na_project/na_nc07/af3/input_json/optimized3/mutants3.4/{structure_name}.json"
 
         copy_input_json(pure_json, json_path, structure_name)
 
@@ -792,7 +806,7 @@ if __name__ == "__main__":
                                for id in na_chains}
         unpaired_msa_path = ""
         query_range = (1, 468)
-        # region_to_mask_1 = (77,85)
+        region_to_mask_1 = (74,79)
         # query_range_2 = (82,468)
         # query_range_3 = (1, 468)
         # region_to_mask_3 = (0, 76)
@@ -813,7 +827,7 @@ if __name__ == "__main__":
 
         for chain_id in na_chains:
             add_protein_template(json_path, chain_id, templates_path_dict[chain_id], query_range)
-            # mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
+            mask_template_region(json_path, chain_id, region_to_mask_1, template_num=0)
             # add_protein_template(json_path, chain_id, templates_path_dict_2[chain_id], query_range_2)
             # add_protein_template(json_path, chain_id, templates_path_dict_3[chain_id], query_range_3)
             # mask_template_region(json_path, chain_id, region_to_mask_3, template_num=2)
